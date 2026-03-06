@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Lockstep Realty KPI Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      --bg:#0b1020; --card:#111a33; --muted:#aab3d1; --text:#eef2ff;
+      --accent:#7c9cff; --accent2:#70e1c8; --danger:#ff6b6b; --border:#1e2a52;
+      --shadow: 0 10px 25px rgba(0,0,0,.25);
+      --radius:16px;
+      --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+    }
+    body{margin:0;background:linear-gradient(135deg,#070b16,#0b1020 55%,#08102a);color:var(--text);font-family:var(--font);}
+    header{padding:22px 18px 10px;max-width:1200px;margin:0 auto;}
+    h1{margin:0;font-size:20px;font-weight:700;letter-spacing:.2px}
+    .sub{color:var(--muted);margin-top:6px;font-size:13px}
+    .wrap{max-width:1200px;margin:0 auto;padding:14px 18px 36px;}
+    .grid{display:grid;gap:12px}
+    .controls{grid-template-columns: repeat(12, 1fr);}
+    .cards{grid-template-columns: repeat(12, 1fr);margin-top:12px}
+    .row{grid-template-columns: repeat(12, 1fr);margin-top:12px}
+    .card{
+      background:rgba(17,26,51,.92);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:14px;
+    }
+    .ctrl{display:flex;flex-direction:column;gap:6px}
+    label{font-size:12px;color:var(--muted)}
+    input, select, button{
+      background:#0c1430;border:1px solid var(--border);color:var(--text);
+      border-radius:12px;padding:10px 10px;font-size:13px;outline:none;
+    }
+    input[type="number"]{appearance:textfield}
+    button{cursor:pointer;font-weight:700}
+    button.primary{background:linear-gradient(135deg,var(--accent),#4e7dff);border:none}
+    button.secondary{background:#0c1430}
+    button:hover{filter:brightness(1.05)}
+    .kpi-title{color:var(--muted);font-size:12px;margin:0}
+    .kpi-value{font-size:20px;font-weight:800;margin:6px 0 0}
+    .kpi-note{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.3}
+    .span-3{grid-column:span 3}
+    .span-4{grid-column:span 4}
+    .span-5{grid-column:span 5}
+    .span-6{grid-column:span 6}
+    .span-7{grid-column:span 7}
+    .span-8{grid-column:span 8}
+    .span-9{grid-column:span 9}
+    .span-12{grid-column:span 12}
+    .titlebar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+    .titlebar h2{margin:0;font-size:14px}
+    .pill{font-size:12px;color:var(--muted)}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:10px;border-bottom:1px solid rgba(170,179,209,.12);text-align:left}
+    th{color:var(--muted);font-weight:700}
+    .hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.35}
+    .warn{color:#ffd37c}
+    @media (max-width: 980px){
+      .span-3,.span-4,.span-5,.span-6,.span-7,.span-8,.span-9{grid-column:span 12}
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1>Lockstep Realty — KPI Dashboard</h1>
+  <div class="sub">Interactive filters (date + agent). Data auto-refreshes from your Google Sheet CSV.</div>
+</header>
+
+<div class="wrap">
+  <div class="grid controls">
+    <div class="card span-4">
+      <div class="ctrl">
+        <label>Google Sheet CSV URL</label>
+        <input id="csvUrl" placeholder="Paste your published CSV link here" />
+        <div class="hint">Tip: After you paste it once, it saves in your browser (localStorage).</div>
+      </div>
+    </div>
+    <div class="card span-2">
+      <div class="ctrl">
+        <label>Start Date</label>
+        <input id="startDate" type="date" />
+      </div>
+    </div>
+    <div class="card span-2">
+      <div class="ctrl">
+        <label>End Date</label>
+        <input id="endDate" type="date" />
+      </div>
+    </div>
+    <div class="card span-2">
+      <div class="ctrl">
+        <label>Agent</label>
+        <select id="agentSelect"></select>
+      </div>
+    </div>
+    <div class="card span-2">
+      <div class="ctrl">
+        <label>Monthly Expenses</label>
+        <input id="monthlyExpenses" type="number" min="0" step="0.01" placeholder="e.g. 12000" />
+      </div>
+    </div>
+
+    <div class="card span-12">
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="primary" id="btnLoad">Load / Refresh Data</button>
+        <button class="secondary" id="btnThisYear">This Year</button>
+        <button class="secondary" id="btnLast90">Last 90 Days</button>
+        <button class="secondary" id="btnAll">All Dates</button>
+      </div>
+      <div class="hint">
+        <span class="warn">You must publish your sheet as CSV</span> (File → Share → Publish to the web → CSV).
+        This dashboard expects at minimum: <b>Date</b>, <b>Agent</b>, and either <b>Agent Income</b> or <b>GCI</b>/<b>Commission</b>.
+        It will try to “guess” the right columns by name.
+      </div>
+    </div>
+  </div>
+
+  <div class="grid cards">
+    <div class="card span-3">
+      <p class="kpi-title">Average Income Per Agent Per Deal</p>
+      <div class="kpi-value" id="kpiAvgIncomePerDeal">—</div>
+      <div class="kpi-note">Agent take-home per deal (avg).</div>
+    </div>
+    <div class="card span-3">
+      <p class="kpi-title">Average Agent Production</p>
+      <div class="kpi-value" id="kpiAvgProduction">—</div>
+      <div class="kpi-note">Deals per agent (avg) in range.</div>
+    </div>
+    <div class="card span-3">
+      <p class="kpi-title">Owner Income Per Agent</p>
+      <div class="kpi-value" id="kpiOwnerIncomePerAgent">—</div>
+      <div class="kpi-note">Owner profit per agent (avg).</div>
+    </div>
+    <div class="card span-3">
+      <p class="kpi-title">Break-even Agent Count</p>
+      <div class="kpi-value" id="kpiBreakevenAgents">—</div>
+      <div class="kpi-note">Agents needed to cover monthly expenses.</div>
+    </div>
+
+    <div class="card span-3">
+      <p class="kpi-title">Monthly Expenses</p>
+      <div class="kpi-value" id="kpiMonthlyExpenses">—</div>
+      <div class="kpi-note">You control this number (input).</div>
+    </div>
+    <div class="card span-3">
+      <p class="kpi-title">Annual Expenses</p>
+      <div class="kpi-value" id="kpiAnnualExpenses">—</div>
+      <div class="kpi-note">Monthly × 12.</div>
+    </div>
+    <div class="card span-6">
+      <p class="kpi-title">Average Agent Income Per Deal (duplicate KPI you requested)</p>
+      <div class="kpi-value" id="kpiAvgIncomePerDeal2">—</div>
+      <div class="kpi-note">Same value as the first KPI, shown again because it’s on your list twice.</div>
+    </div>
+  </div>
+
+  <div class="grid row">
+    <div class="card span-8">
+      <div class="titlebar">
+        <h2>Monthly Trend</h2>
+        <div class="pill" id="trendPill">—</div>
+      </div>
+      <canvas id="trendChart" height="120"></canvas>
+      <div class="hint">Shows total agent income + total deals by month for the filtered set.</div>
+    </div>
+
+    <div class="card span-4">
+      <div class="titlebar">
+        <h2>Top Agents (by Agent Income)</h2>
+        <div class="pill" id="topPill">—</div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Agent</th><th>Deals</th><th>Income</th></tr>
+        </thead>
+        <tbody id="topAgentsBody"></tbody>
+      </table>
+      <div class="hint">If you filter to a single agent, this table will just show that agent.</div>
+    </div>
+
+    <div class="card span-12">
+      <div class="titlebar">
+        <h2>Column Mapping (what the dashboard thinks your headers mean)</h2>
+        <div class="pill" id="mapPill">—</div>
+      </div>
+      <div id="mappingBox" class="hint">Load data to see detected columns.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ---------- utilities ----------
+  const $ = (id) => document.getElementById(id);
+
+  function money(n){
+    if(!isFinite(n)) return "—";
+    return n.toLocaleString(undefined,{style:"currency",currency:"USD",maximumFractionDigits:0});
+  }
+  function number(n, digits=1){
+    if(!isFinite(n)) return "—";
+    return n.toLocaleString(undefined,{maximumFractionDigits:digits});
+  }
+  function isoDate(d){
+    const pad = (x)=>String(x).padStart(2,"0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+  function parseDateLoose(v){
+    if(!v) return null;
+    if(v instanceof Date) return isNaN(v) ? null : v;
+    const s = String(v).trim();
+    // Try ISO first
+    const d1 = new Date(s);
+    if(!isNaN(d1)) return d1;
+    // Try MM/DD/YYYY
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if(m){
+      let mm = +m[1], dd = +m[2], yy = +m[3];
+      if(yy < 100) yy += 2000;
+      const d2 = new Date(yy, mm-1, dd);
+      return isNaN(d2) ? null : d2;
+    }
+    return null;
+  }
+  function parseNumberLoose(v){
+    if(v === null || v === undefined) return NaN;
+    const s = String(v).replace(/[\$,]/g,"").trim();
+    const n = parseFloat(s);
+    return isNaN(n) ? NaN : n;
+  }
+  function monthKey(d){
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+
+  // ---------- CSV parsing ----------
+  function parseCSV(text){
+    // simple CSV parser that handles quotes
+    const rows = [];
+    let i = 0, field = "", row = [], inQuotes = false;
+    while(i < text.length){
+      const c = text[i];
+      if(inQuotes){
+        if(c === '"'){
+          if(text[i+1] === '"'){ field += '"'; i++; }
+          else inQuotes = false;
+        } else field += c;
+      } else {
+        if(c === '"') inQuotes = true;
+        else if(c === ","){ row.push(field); field=""; }
+        else if(c === "\n"){
+          row.push(field); rows.push(row);
+          row=[]; field="";
+        } else if(c === "\r"){
+          // ignore
+        } else field += c;
+      }
+      i++;
+    }
+    row.push(field); rows.push(row);
+    // trim empty last row
+    if(rows.length && rows[rows.length-1].every(x => String(x).trim()==="")) rows.pop();
+    return rows;
+  }
+
+  function guessColumns(headers){
+    const h = headers.map(x => String(x||"").trim());
+    const lower = h.map(x=>x.toLowerCase());
+
+    const findAny = (cands) => {
+      for(const cand of cands){
+        const idx = lower.findIndex(x => x === cand || x.includes(cand));
+        if(idx >= 0) return idx;
+      }
+      return -1;
+    };
+
+    // date column
+    const dateIdx = findAny(["close date","date","closing date","settlement date"]);
+
+    // agent column
+    const agentIdx = findAny(["agent","agent name","salesperson","realtor"]);
+
+    // agent income column: "Agent Income", "Agent Net", etc.
+    const agentIncomeIdx = findAny(["agent income","agent net","agent compensation","net to agent","agent commission"]);
+
+    // owner income column: if present
+    const ownerIncomeIdx = findAny(["owner income","broker income","company income","net to broker","brokerage income"]);
+
+    // deal identifier / count: use "deal id" or "address" or "mls" etc. (optional)
+    const dealIdIdx = findAny(["deal id","transaction id","mls","listing id","address","property"]);
+
+    // fallback commission column: gci / commission
+    const gciIdx = findAny(["gci","gross commission","commission","gross income","gross"]);
+
+    return { dateIdx, agentIdx, agentIncomeIdx, ownerIncomeIdx, dealIdIdx, gciIdx, headers:h };
+  }
+
+  // ---------- state ----------
+  let RAW = [];
+  let COLS = null;
+  let chart = null;
+
+  function setDefaultDatesFromData(){
+    const dates = RAW.map(r => r._date).filter(Boolean).sort((a,b)=>a-b);
+    if(!dates.length) return;
+    const min = dates[0], max = dates[dates.length-1];
+    $("startDate").value = isoDate(min);
+    $("endDate").value = isoDate(max);
+  }
+
+  function buildAgentDropdown(){
+    const set = new Set(RAW.map(r => r._agent).filter(Boolean));
+    const agents = Array.from(set).sort((a,b)=>a.localeCompare(b));
+    const sel = $("agentSelect");
+    sel.innerHTML = "";
+    const optAll = document.createElement("option");
+    optAll.value = "__ALL__";
+    optAll.textContent = "All agents";
+    sel.appendChild(optAll);
+    for(const a of agents){
+      const opt = document.createElement("option");
+      opt.value = a;
+      opt.textContent = a;
+      sel.appendChild(opt);
+    }
+  }
+
+  function filterData(){
+    const s = parseDateLoose($("startDate").value);
+    const e = parseDateLoose($("endDate").value);
+    const agent = $("agentSelect").value;
+    const start = s ? new Date(s.getFullYear(), s.getMonth(), s.getDate()) : null;
+    const end = e ? new Date(e.getFullYear(), e.getMonth(), e.getDate(), 23,59,59) : null;
+
+    return RAW.filter(r=>{
+      if(start && r._date && r._date < start) return false;
+      if(end && r._date && r._date > end) return false;
+      if(agent !== "__ALL__" && r._agent !== agent) return false;
+      return true;
+    });
+  }
+
+  function computeKPIs(rows){
+    // deals count: count rows (or distinct dealId if present)
+    let deals = 0;
+    if(COLS.dealIdIdx >= 0){
+      const set = new Set(rows.map(r => r._dealId).filter(Boolean));
+      deals = set.size || rows.length;
+    } else {
+      deals = rows.length;
+    }
+
+    const agents = Array.from(new Set(rows.map(r=>r._agent).filter(Boolean)));
+    const agentCount = agents.length || 0;
+
+    const totalAgentIncome = rows.reduce((sum,r)=> sum + (isFinite(r._agentIncome)?r._agentIncome:0), 0);
+    const totalOwnerIncome = rows.reduce((sum,r)=> sum + (isFinite(r._ownerIncome)?r._ownerIncome:0), 0);
+
+    // If owner income column not provided, estimate owner as (GCI - agentIncome) where possible
+    let ownerEstimated = totalOwnerIncome;
+    if(COLS.ownerIncomeIdx < 0){
+      const est = rows.reduce((sum,r)=>{
+        if(isFinite(r._gci) && isFinite(r._agentIncome)) return sum + Math.max(0, r._gci - r._agentIncome);
+        return sum;
+      },0);
+      if(est > 0) ownerEstimated = est;
+    }
+
+    const avgIncomePerDeal = deals > 0 ? totalAgentIncome / deals : NaN;
+
+    // average production: average deals per agent (in filtered range)
+    let avgProduction = NaN;
+    if(agentCount > 0){
+      // compute deals per agent by counting rows per agent, then average
+      const byA = new Map();
+      for(const r of rows){
+        if(!r._agent) continue;
+        byA.set(r._agent, (byA.get(r._agent) || 0) + 1);
+      }
+      const vals = Array.from(byA.values());
+      avgProduction = vals.length ? vals.reduce((a,b)=>a+b,0) / vals.length : NaN;
+    }
+
+    const ownerIncomePerAgent = agentCount > 0 ? ownerEstimated / agentCount : NaN;
+
+    // expenses
+    const monthlyExp = parseNumberLoose($("monthlyExpenses").value);
+    const annualExp = isFinite(monthlyExp) ? monthlyExp * 12 : NaN;
+
+    // breakeven: monthly expenses / owner income per agent per month-ish
+    // We approximate monthly owner income per agent using filtered range:
+    //   total owner income / agentCount / number of months in range
+    let months = 1;
+    const ds = rows.map(r=>r._date).filter(Boolean).sort((a,b)=>a-b);
+    if(ds.length){
+      const min = ds[0], max = ds[ds.length-1];
+      months = Math.max(1, (max.getFullYear()-min.getFullYear())*12 + (max.getMonth()-min.getMonth()) + 1);
+    }
+    const ownerIncomePerAgentPerMonth = (agentCount>0 && months>0) ? ownerEstimated / agentCount / months : NaN;
+    const breakevenAgents = (isFinite(monthlyExp) && isFinite(ownerIncomePerAgentPerMonth) && ownerIncomePerAgentPerMonth>0)
+      ? (monthlyExp / ownerIncomePerAgentPerMonth)
+      : NaN;
+
+    return {
+      deals, agentCount, totalAgentIncome, ownerEstimated,
+      avgIncomePerDeal, avgProduction, ownerIncomePerAgent,
+      monthlyExp, annualExp, breakevenAgents, months
+    };
+  }
+
+  function updateKPICards(k){
+    $("kpiAvgIncomePerDeal").textContent = money(k.avgIncomePerDeal);
+    $("kpiAvgIncomePerDeal2").textContent = money(k.avgIncomePerDeal);
+    $("kpiAvgProduction").textContent = number(k.avgProduction, 2);
+    $("kpiOwnerIncomePerAgent").textContent = money(k.ownerIncomePerAgent);
+    $("kpiMonthlyExpenses").textContent = money(k.monthlyExp);
+    $("kpiAnnualExpenses").textContent = money(k.annualExp);
+    $("kpiBreakevenAgents").textContent = isFinite(k.breakevenAgents) ? number(k.breakevenAgents, 1) : "—";
+  }
+
+  function buildMonthlyTrend(rows){
+    const byMonth = new Map();
+    for(const r of rows){
+      if(!r._date) continue;
+      const mk = monthKey(r._date);
+      if(!byMonth.has(mk)) byMonth.set(mk, { deals:0, agentIncome:0 });
+      const o = byMonth.get(mk);
+      o.deals += 1;
+      o.agentIncome += isFinite(r._agentIncome) ? r._agentIncome : 0;
+    }
+    const labels = Array.from(byMonth.keys()).sort();
+    const deals = labels.map(l=>byMonth.get(l).deals);
+    const income = labels.map(l=>byMonth.get(l).agentIncome);
+    return { labels, deals, income };
+  }
+
+  function renderChart(trend){
+    const ctx = $("trendChart");
+    if(chart) chart.destroy();
+
+    chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: trend.labels,
+        datasets: [
+          { label: "Total Agent Income", data: trend.income, yAxisID: "y1" },
+          { label: "Deals", data: trend.deals, yAxisID: "y2" }
+        ]
+      },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { labels: { color: "#eef2ff" } } },
+        scales: {
+          x: { ticks: { color:"#aab3d1" }, grid:{ color:"rgba(170,179,209,.08)" } },
+          y1: { position:"left", ticks:{ color:"#aab3d1" }, grid:{ color:"rgba(170,179,209,.08)" } },
+          y2: { position:"right", ticks:{ color:"#aab3d1" }, grid:{ drawOnChartArea:false } }
+        }
+      }
+    });
+  }
+
+  function renderTopAgents(rows){
+    const byA = new Map();
+    for(const r of rows){
+      if(!r._agent) continue;
+      if(!byA.has(r._agent)) byA.set(r._agent, { deals:0, income:0 });
+      const o = byA.get(r._agent);
+      o.deals += 1;
+      o.income += isFinite(r._agentIncome) ? r._agentIncome : 0;
+    }
+    const arr = Array.from(byA.entries()).map(([agent,v])=>({agent, ...v}))
+      .sort((a,b)=>b.income-a.income)
+      .slice(0,10);
+
+    const body = $("topAgentsBody");
+    body.innerHTML = "";
+    if(!arr.length){
+      body.innerHTML = `<tr><td colspan="3" style="color:#aab3d1">No data for current filters.</td></tr>`;
+      return;
+    }
+    for(const r of arr){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${r.agent}</td><td>${r.deals}</td><td>${money(r.income)}</td>`;
+      body.appendChild(tr);
+    }
+  }
+
+  function showMapping(){
+    const map = [];
+    const h = COLS.headers;
+    const show = (name, idx) => map.push(`<b>${name}:</b> ${idx>=0 ? h[idx] : "<span class='warn'>Not found</span>"}`);
+    show("Date column", COLS.dateIdx);
+    show("Agent column", COLS.agentIdx);
+    show("Agent Income column", COLS.agentIncomeIdx);
+    show("Owner Income column", COLS.ownerIncomeIdx);
+    show("GCI/Commission column (fallback)", COLS.gciIdx);
+    $("mappingBox").innerHTML = map.join(" &nbsp; • &nbsp; ");
+    $("mapPill").textContent = `Headers detected: ${h.length}`;
+  }
+
+  function setPills(rows, k){
+    const agent = $("agentSelect").value === "__ALL__" ? "All agents" : $("agentSelect").value;
+    const s = $("startDate").value || "—";
+    const e = $("endDate").value || "—";
+    $("trendPill").textContent = `${agent} • ${s} to ${e} • Deals: ${k.deals}`;
+    $("topPill").textContent = `Agents: ${k.agentCount}`;
+  }
+
+  async function loadData(){
+    const url = $("csvUrl").value.trim();
+    if(!url){
+      alert("Paste your published Google Sheet CSV URL first.");
+      return;
+    }
+    localStorage.setItem("LOCKSTEP_CSV_URL", url);
+
+    const resp = await fetch(url, { cache: "no-store" });
+    if(!resp.ok){
+      alert("Could not fetch CSV. Make sure the sheet is published and link is correct.");
+      return;
+    }
+    const text = await resp.text();
+    const rows = parseCSV(text);
+    if(rows.length < 2){
+      alert("CSV has no data rows.");
+      return;
+    }
+    const headers = rows[0];
+    COLS = guessColumns(headers);
+
+    if(COLS.dateIdx < 0 || COLS.agentIdx < 0){
+      alert("Could not detect required columns (Date and Agent). Rename your headers to include 'Date' and 'Agent'.");
+      return;
+    }
+
+    RAW = rows.slice(1).map(r=>{
+      const date = parseDateLoose(r[COLS.dateIdx]);
+      const agent = String(r[COLS.agentIdx] || "").trim();
+
+      // Agent Income: prefer direct column, else try gci as proxy (not ideal, but keeps chart alive)
+      const ai = (COLS.agentIncomeIdx>=0) ? parseNumberLoose(r[COLS.agentIncomeIdx]) : NaN;
+      const gci = (COLS.gciIdx>=0) ? parseNumberLoose(r[COLS.gciIdx]) : NaN;
+      const agentIncome = isFinite(ai) ? ai : (isFinite(gci) ? gci : NaN);
+
+      const ownerIncome = (COLS.ownerIncomeIdx>=0) ? parseNumberLoose(r[COLS.ownerIncomeIdx]) : NaN;
+
+      const dealId = (COLS.dealIdIdx>=0) ? String(r[COLS.dealIdIdx]||"").trim() : "";
+
+      return {
+        _date: date,
+        _agent: agent,
+        _agentIncome: agentIncome,
+        _ownerIncome: ownerIncome,
+        _gci: gci,
+        _dealId: dealId
+      };
+    });
+
+    buildAgentDropdown();
+    if(!$("startDate").value || !$("endDate").value) setDefaultDatesFromData();
+    showMapping();
+    recalc();
+  }
+
+  function recalc(){
+    const rows = filterData();
+    const k = computeKPIs(rows);
+    updateKPICards(k);
+    const trend = buildMonthlyTrend(rows);
+    renderChart(trend);
+    renderTopAgents(rows);
+    setPills(rows, k);
+  }
+
+  // ---------- quick date buttons ----------
+  function setThisYear(){
+    const now = new Date();
+    const s = new Date(now.getFullYear(),0,1);
+    $("startDate").value = isoDate(s);
+    $("endDate").value = isoDate(now);
+    recalc();
+  }
+  function setLast90(){
+    const now = new Date();
+    const s = new Date(now);
+    s.setDate(s.getDate()-90);
+    $("startDate").value = isoDate(s);
+    $("endDate").value = isoDate(now);
+    recalc();
+  }
+  function setAll(){
+    setDefaultDatesFromData();
+    recalc();
+  }
+
+  // ---------- init ----------
+  window.addEventListener("DOMContentLoaded", ()=>{
+    const saved = localStorage.getItem("LOCKSTEP_CSV_URL");
+    if(saved) $("csvUrl").value = saved;
+    $("btnLoad").addEventListener("click", loadData);
+    $("btnThisYear").addEventListener("click", setThisYear);
+    $("btnLast90").addEventListener("click", setLast90);
+    $("btnAll").addEventListener("click", setAll);
+
+    $("startDate").addEventListener("change", recalc);
+    $("endDate").addEventListener("change", recalc);
+    $("agentSelect").addEventListener("change", recalc);
+    $("monthlyExpenses").addEventListener("input", recalc);
+  });
+</script>
+</body>
+</html>
